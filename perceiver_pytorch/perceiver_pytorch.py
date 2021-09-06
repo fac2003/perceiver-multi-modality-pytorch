@@ -1,5 +1,5 @@
 from math import pi, log
-from functools import wraps
+from functools import wraps, partial
 
 import torch
 from torch import nn, einsum
@@ -9,6 +9,7 @@ from einops import rearrange, repeat
 
 # helpers
 from torch.nn import GELU
+from torch.utils.checkpoint import checkpoint
 
 
 def exists(val):
@@ -132,7 +133,7 @@ class Attention(nn.Module):
 
         q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q, k, v))
 
-        sim = einsum('b i d, b j d -> b i j', q, k) * self.scale
+        sim = checkpoint(partial(einsum,'b i d, b j d -> b i j'), q, k) * self.scale
 
         if exists(mask):
             mask = rearrange(mask, 'b ... -> b (...)')
@@ -143,7 +144,7 @@ class Attention(nn.Module):
         # attention, what we cannot get enough of
         attn = sim.softmax(dim=-1)
 
-        out = einsum('b i j, b j d -> b i d', attn, v)
+        out = checkpoint(partial(einsum,'b i j, b j d -> b i d'), attn, v)
         # cast back to input type:
         out = out.type(x.dtype)
         out = rearrange(out, '(b h) n d -> b n (h d)', h=h)
